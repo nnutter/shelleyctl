@@ -45,6 +45,9 @@ type podmanInspect struct {
 		Type, Source, Destination string
 		RW                        bool
 	}
+	NetworkSettings struct {
+		Networks map[string]json.RawMessage
+	}
 	HostConfig struct {
 		PortBindings map[string][]struct{ HostIP, HostPort string }
 	}
@@ -62,6 +65,7 @@ func (p podmanInspect) matches(id, name string) bool {
 
 func (p podmanInspect) resource() *resource {
 	c := &resource{id: p.ID, name: strings.TrimPrefix(p.Name, "/"), image: p.ImageName, running: *p.State.Running, labels: p.Config.Labels}
+	c.validNetwork = onlyPodmanNetwork(p.NetworkSettings.Networks, c.name)
 	if len(p.Mounts) == 1 {
 		m := p.Mounts[0]
 		c.home = m.Source
@@ -79,6 +83,14 @@ func (p podmanInspect) resource() *resource {
 	c.port = port
 	c.validPort = err == nil && isLoopback(ports[0].HostIP)
 	return c
+}
+
+func onlyPodmanNetwork(networks map[string]json.RawMessage, name string) bool {
+	if len(networks) != 1 {
+		return false
+	}
+	_, attached := networks[name]
+	return attached
 }
 
 func writableHomeMount(kind, destination string, writable bool) bool {
@@ -103,6 +115,7 @@ type appleInspect struct {
 			Source, Destination string
 			Options             []string
 		}
+		Networks       []appleAttachment
 		PublishedPorts []struct {
 			HostAddress             string
 			HostPort, ContainerPort int
@@ -110,12 +123,30 @@ type appleInspect struct {
 			Count                   *int
 		}
 	}
-	Status json.RawMessage
+	Status   json.RawMessage
+	Networks []appleAttachment
+}
+
+func (p appleInspect) attachments() []appleAttachment {
+	if len(p.Networks) != 0 {
+		return p.Networks
+	}
+	// Apple 1.x nests active attachments inside the status object.
+	var status struct{ Networks []appleAttachment }
+	if err := json.Unmarshal(p.Status, &status); err != nil {
+		return nil
+	}
+	return status.Networks
 }
 
 func (p appleInspect) resource(state string) *resource {
 	cfg := p.Configuration
 	c := &resource{id: cfg.ID, name: cfg.ID, image: cfg.Image.Reference, running: state == "running", labels: cfg.Labels}
+	c.validNetwork = onlyAppleNetwork(cfg.Networks, c.name)
+	attachments := p.attachments()
+	if c.running || hasAttachments(attachments) {
+		c.validNetwork = c.validNetwork && onlyAppleNetwork(attachments, c.name)
+	}
 	if len(cfg.Mounts) == 1 {
 		m := cfg.Mounts[0]
 		_, virtiofs := m.Type["virtiofs"]
@@ -149,6 +180,8 @@ func (p appleInspect) state() (string, error) {
 		return "", fmt.Errorf("container returned unknown state %q for %q", state, p.Configuration.ID)
 	}
 }
+
+func hasAttachments(attachments []appleAttachment) bool { return len(attachments) != 0 }
 
 func writableAppleHome(destination string, options []string) bool {
 	if destination != "/home/shelley" {

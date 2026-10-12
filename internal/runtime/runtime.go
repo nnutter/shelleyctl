@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	managedLabel = "io.shelleyctl.managed"
-	imageLabel   = "io.shelleyctl.image"
-	homeLabel    = "io.shelleyctl.home"
-	portLabel    = "io.shelleyctl.port"
+	managedLabel  = "io.shelleyctl.managed"
+	instanceLabel = "io.shelleyctl.instance"
+	imageLabel    = "io.shelleyctl.image"
+	homeLabel     = "io.shelleyctl.home"
+	portLabel     = "io.shelleyctl.port"
 )
 
 // Spec describes the desired container. Name can be an instance name or a
@@ -86,6 +87,27 @@ func (a *Adapter) Build(ctx context.Context, image, contextDir string) error {
 	return err
 }
 
+// Check validates an existing container against the caller's durable record.
+// Missing containers succeed without creating resources.
+func (a *Adapter) Check(ctx context.Context, spec Spec) error {
+	name, err := containerName(spec.Name)
+	if err != nil {
+		return err
+	}
+	spec.Name = name
+	if err := validateSpec(spec); err != nil {
+		return err
+	}
+	c, err := a.lookup(ctx, name)
+	if err != nil {
+		return err
+	}
+	if c == nil {
+		return nil
+	}
+	return c.validate(spec)
+}
+
 // Ensure creates a stopped container, or validates an existing container.
 // Call Start separately to run it. Existing resources are never replaced.
 func (a *Adapter) Ensure(ctx context.Context, spec Spec) error {
@@ -102,22 +124,25 @@ func (a *Adapter) Ensure(ctx context.Context, spec Spec) error {
 		return err
 	}
 	if c != nil {
-		return c.validate(spec)
+		if err := c.validate(spec); err != nil {
+			return err
+		}
+		return validateNetwork(ctx, a, name)
 	}
-	args := []string{"create", "--name", name}
-	if a.isPodman() {
-		// Map the host operator to the image user so bind-mounted files remain writable.
-		args = append(args, "--userns=keep-id:uid=1000,gid=1000", "--user", "1000:1000")
+	if err := ensureNetwork(ctx, a, name); err != nil {
+		return err
 	}
-	for _, label := range []string{managedLabel + "=true", imageLabel + "=" + spec.Image, homeLabel + "=" + spec.Home, portLabel + "=" + strconv.Itoa(spec.Port)} {
-		args = append(args, "--label", label)
+	_, err = a.command(ctx, a.createArguments(spec)...)
+	if err != nil {
+		if a.creationCompleted(ctx, spec) {
+			return nil
+		}
+		return err
 	}
-	args = append(args, "--volume", spec.Home+":/home/shelley", "--publish", fmt.Sprintf("127.0.0.1:%d:9000", spec.Port), spec.Image)
-	_, err = a.command(ctx, args...)
-	if err != nil && a.creationCompleted(ctx, spec) {
-		return nil
+	if !a.creationCompleted(ctx, spec) {
+		return fmt.Errorf("created container %q failed configuration verification", name)
 	}
-	return err
+	return nil
 }
 
 // Inspect distinguishes absence from runtime failures. It does not assert
@@ -133,17 +158,25 @@ func (a *Adapter) Inspect(ctx context.Context, name string) (Status, error) {
 	return Status{Exists: true, Running: c.running, ID: c.id}, nil
 }
 
-// Remove deletes a validated managed container, including a running one.
-// Missing containers are unchanged. Podman mutations use the inspected ID.
+// Remove deletes a validated managed container, then its owned empty network.
+// It also retries network cleanup when the container is absent.
+// Podman container mutations use the inspected ID.
 func (a *Adapter) Remove(ctx context.Context, name string) error {
 	c, err := a.lookup(ctx, name)
 	if err != nil {
 		return err
 	}
+	name, err = containerName(name)
+	if err != nil {
+		return err
+	}
 	if c == nil {
-		return nil
+		return removeNetwork(ctx, a, name)
 	}
 	if err := c.validateSaved(); err != nil {
+		return err
+	}
+	if err := validateNetwork(ctx, a, name); err != nil {
 		return err
 	}
 	operation := "delete"
@@ -151,10 +184,10 @@ func (a *Adapter) Remove(ctx context.Context, name string) error {
 		operation = "rm"
 	}
 	_, err = a.command(ctx, operation, "--force", c.id)
-	if err != nil && a.removalCompleted(ctx, name) {
-		return nil
+	if err != nil && !a.removalCompleted(ctx, name) {
+		return err
 	}
-	return err
+	return removeNetwork(ctx, a, name)
 }
 
 // Start starts a validated managed container. Running containers are unchanged.
@@ -169,6 +202,9 @@ func (a *Adapter) Start(ctx context.Context, name string) error {
 	if err := c.validateSaved(); err != nil {
 		return err
 	}
+	if err := validateNetwork(ctx, a, c.name); err != nil {
+		return err
+	}
 	if c.running {
 		return nil
 	}
@@ -180,6 +216,7 @@ func (a *Adapter) Start(ctx context.Context, name string) error {
 }
 
 func (a *Adapter) command(ctx context.Context, args ...string) ([]byte, error) {
+	// #nosec G702 -- New restricts the executable to podman or container; arguments are passed without a shell.
 	cmd := exec.CommandContext(ctx, a.binary, args...)
 	// Bound waits when a CLI child retains stdout/stderr after cancellation.
 	cmd.WaitDelay = time.Second
@@ -192,6 +229,21 @@ func (a *Adapter) command(ctx context.Context, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("%s %s: %w; stderr: %s", a.binary, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil
+}
+
+func (a *Adapter) createArguments(spec Spec) []string {
+	args := []string{"create", "--name", spec.Name, "--network", spec.Name}
+	if a.isPodman() {
+		// Map the host operator to the image user so bind-mounted files remain writable.
+		args = append(args, "--userns=keep-id:uid=1000,gid=1000", "--user", "1000:1000")
+	} else {
+		// Apple's VirtioFS preserves the host directory owner and refuses chown.
+		args = append(args, "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()))
+	}
+	for _, label := range []string{managedLabel + "=true", imageLabel + "=" + spec.Image, homeLabel + "=" + spec.Home, portLabel + "=" + strconv.Itoa(spec.Port)} {
+		args = append(args, "--label", label)
+	}
+	return append(args, "--volume", spec.Home+":/home/shelley", "--publish", fmt.Sprintf("127.0.0.1:%d:9000", spec.Port), spec.Image)
 }
 
 func (a *Adapter) creationCompleted(ctx context.Context, spec Spec) bool {
@@ -390,6 +442,7 @@ type resource struct {
 	labels                map[string]string
 	port                  int
 	validMount, validPort bool
+	validNetwork          bool
 }
 
 func (c *resource) matchesHome(s Spec) bool {
@@ -428,6 +481,9 @@ func (c *resource) validate(s Spec) error {
 	}
 	if !c.matchesPort(s) {
 		return fmt.Errorf("refuse conflicting container %q: expected only 127.0.0.1:%d:9000/tcp", c.name, s.Port)
+	}
+	if !c.validNetwork {
+		return fmt.Errorf("refuse conflicting container %q: expected only network %q", c.name, c.name)
 	}
 	return nil
 }

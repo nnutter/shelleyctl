@@ -72,10 +72,10 @@ func writeFile(t *testing.T, path, content string, mode os.FileMode) {
 	require.NoError(t, os.WriteFile(path, []byte(content), mode))
 }
 
-const podmanJSON = `[{"Id":"abc123","Name":"shelleyctl-demo","ImageName":"localhost/shelleyctl:latest","State":{"Running":false},"Config":{"Labels":{"io.shelleyctl.managed":"true","io.shelleyctl.image":"localhost/shelleyctl:latest","io.shelleyctl.home":"/tmp/home space","io.shelleyctl.port":"19000"}},"Mounts":[{"Type":"bind","Source":"/tmp/home space","Destination":"/home/shelley","RW":true}],"HostConfig":{"PortBindings":{"9000/tcp":[{"HostIp":"127.0.0.1","HostPort":"19000"}]}}}]`
+const podmanJSON = `[{"Id":"abc123","Name":"shelleyctl-demo","ImageName":"localhost/shelleyctl:latest","State":{"Running":false},"Config":{"Labels":{"io.shelleyctl.managed":"true","io.shelleyctl.image":"localhost/shelleyctl:latest","io.shelleyctl.home":"/tmp/home space","io.shelleyctl.port":"19000"}},"Mounts":[{"Type":"bind","Source":"/tmp/home space","Destination":"/home/shelley","RW":true}],"NetworkSettings":{"Networks":{"shelleyctl-demo":{}}},"HostConfig":{"PortBindings":{"9000/tcp":[{"HostIp":"127.0.0.1","HostPort":"19000"}]}}}]`
 
 // Swift Codable encodes Filesystem.FSType.virtiofs as {"virtiofs":{}}.
-const appleJSON = `[{"configuration":{"id":"shelleyctl-demo","image":{"reference":"localhost/shelleyctl:latest"},"labels":{"io.shelleyctl.managed":"true","io.shelleyctl.image":"localhost/shelleyctl:latest","io.shelleyctl.home":"/tmp/home space","io.shelleyctl.port":"19000"},"mounts":[{"type":{"virtiofs":{}},"source":"/tmp/home space","destination":"/home/shelley","options":[]}],"publishedPorts":[{"hostAddress":"127.0.0.1","hostPort":19000,"containerPort":9000,"proto":"tcp"}]},"status":"stopped","networks":[]}]`
+const appleJSON = `[{"configuration":{"id":"shelleyctl-demo","image":{"reference":"localhost/shelleyctl:latest"},"labels":{"io.shelleyctl.managed":"true","io.shelleyctl.image":"localhost/shelleyctl:latest","io.shelleyctl.home":"/tmp/home space","io.shelleyctl.port":"19000"},"networks":[{"network":"shelleyctl-demo","options":{"hostname":"shelleyctl-demo"}}],"mounts":[{"type":{"virtiofs":{}},"source":"/tmp/home space","destination":"/home/shelley","options":[]}],"publishedPorts":[{"hostAddress":"127.0.0.1","hostPort":19000,"containerPort":9000,"proto":"tcp"}]},"status":"stopped","networks":[]}]`
 
 func query(platform, json string) []reply {
 	if platform == "darwin" {
@@ -95,9 +95,11 @@ func absent(platform string) reply {
 }
 
 func createArgs(platform string) []string {
-	args := []string{"create", "--name", "shelleyctl-demo"}
+	args := []string{"create", "--name", "shelleyctl-demo", "--network", "shelleyctl-demo"}
 	if platform == "linux" {
 		args = append(args, "--userns=keep-id:uid=1000,gid=1000", "--user", "1000:1000")
+	} else {
+		args = append(args, "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()))
 	}
 	return append(args, "--label", "io.shelleyctl.managed=true", "--label", "io.shelleyctl.image=localhost/shelleyctl:latest", "--label", "io.shelleyctl.home=/tmp/home space", "--label", "io.shelleyctl.port=19000", "--volume", "/tmp/home space:/home/shelley", "--publish", "127.0.0.1:19000:9000", "localhost/shelleyctl:latest")
 }
@@ -111,7 +113,8 @@ func fixture(platform string) string {
 
 func running(platform, json string) string {
 	if platform == "darwin" {
-		return strings.ReplaceAll(json, `"status":"stopped"`, `"status":"running"`)
+		json = strings.ReplaceAll(json, `"status":"stopped"`, `"status":"running"`)
+		return strings.ReplaceAll(json, `"networks":[]`, `"networks":[{"network":"shelleyctl-demo"}]`)
 	}
 	return strings.ReplaceAll(json, `"Running":false`, `"Running":true`)
 }
@@ -124,13 +127,22 @@ func TestLifecycle(t *testing.T) {
 				id, remove = "shelleyctl-demo", "delete"
 			}
 			json := fixture(platform)
-			replies := []reply{absent(platform), {args: createArgs(platform)}}
+			replies := []reply{absent(platform), networkAbsent(platform), {args: networkCreateArgs()}}
+			replies = append(replies, networkQuery(platform, networkFixture(platform))...)
+			replies = append(replies, reply{args: createArgs(platform)})
 			replies = append(replies, query(platform, json)...)
 			replies = append(replies, query(platform, json)...)
+			replies = append(replies, networkQuery(platform, networkFixture(platform))...)
+			replies = append(replies, query(platform, json)...)
+			replies = append(replies, networkQuery(platform, networkFixture(platform))...)
 			replies = append(replies, reply{args: []string{"start", id}})
 			replies = append(replies, query(platform, running(platform, json))...)
+			replies = append(replies, networkQuery(platform, networkFixture(platform))...)
 			replies = append(replies, query(platform, running(platform, json))...)
-			replies = append(replies, reply{args: []string{remove, "--force", id}}, absent(platform))
+			replies = append(replies, networkQuery(platform, networkFixture(platform))...)
+			replies = append(replies, reply{args: []string{remove, "--force", id}})
+			replies = append(replies, networkQuery(platform, networkFixture(platform))...)
+			replies = append(replies, networkMembers(platform, "[]"), reply{args: []string{"network", remove, "shelleyctl-demo"}}, absent(platform), networkAbsent(platform))
 			a, done := fakeCLI(t, platform, replies)
 			spec := runtime.Spec{Name: "demo", Image: "localhost/shelleyctl:latest", Home: "/tmp/home space", Port: 19000}
 			require.NoError(t, a.Ensure(t.Context(), spec))
@@ -173,6 +185,18 @@ func unsafeFixture(platform, mismatch string) string {
 	case "labels":
 		json = strings.ReplaceAll(json, `"io.shelleyctl.home":"/tmp/home space"`, `"io.shelleyctl.home":""`)
 	}
+	return unsafeNetworkFixture(json, mismatch)
+}
+
+func unsafeNetworkFixture(json, mismatch string) string {
+	switch mismatch {
+	case "network":
+		json = strings.ReplaceAll(json, `"network":"shelleyctl-demo"`, `"network":"default"`)
+		json = strings.ReplaceAll(json, `"Networks":{"shelleyctl-demo":{}}`, `"Networks":{"podman":{}}`)
+	case "extra-network":
+		json = strings.ReplaceAll(json, `"Networks":{"shelleyctl-demo":{}}`, `"Networks":{"shelleyctl-demo":{},"podman":{}}`)
+		json = strings.ReplaceAll(json, `"networks":[{"network":"shelleyctl-demo"`, `"networks":[{"network":"default"},{"network":"shelleyctl-demo"`)
+	}
 	return json
 }
 
@@ -180,7 +204,7 @@ func TestRefuseUnsafeContainer(t *testing.T) {
 	// All three mutation methods must reject independently: a guard only in
 	// Ensure cannot protect direct Start or Remove calls.
 	for _, platform := range []string{"linux", "darwin"} {
-		for _, mismatch := range []string{"foreign", "image", "home", "port", "readonly", "extra-port", "labels"} {
+		for _, mismatch := range []string{"foreign", "image", "home", "port", "readonly", "extra-port", "labels", "network", "extra-network"} {
 			t.Run(platform+"/"+mismatch, func(t *testing.T) {
 				json := unsafeFixture(platform, mismatch)
 				replies := append(query(platform, json), query(platform, json)...)
@@ -287,7 +311,9 @@ func mutationScenario(t *testing.T, platform, operation string, completed bool) 
 	case "create":
 		// Expected commands come from the protocol contract, not the adapter.
 		failed.args = createArgs(platform)
-		replies = []reply{absent(platform), failed}
+		replies = []reply{absent(platform), networkAbsent(platform), {args: networkCreateArgs()}}
+		replies = append(replies, networkQuery(platform, networkFixture(platform))...)
+		replies = append(replies, failed)
 		if completed {
 			replies = append(replies, query(platform, json)...)
 		} else {
@@ -298,7 +324,9 @@ func mutationScenario(t *testing.T, platform, operation string, completed bool) 
 		}
 	case "start":
 		failed.args = []string{"start", id}
-		replies = append(query(platform, json), failed)
+		replies = query(platform, json)
+		replies = append(replies, networkQuery(platform, networkFixture(platform))...)
+		replies = append(replies, failed)
 		if completed {
 			json = running(platform, json)
 		}
@@ -306,9 +334,13 @@ func mutationScenario(t *testing.T, platform, operation string, completed bool) 
 		invoke = func(a *runtime.Adapter) error { return a.Start(t.Context(), "demo") }
 	case "remove":
 		failed.args = []string{remove, "--force", id}
-		replies = append(query(platform, json), failed)
+		replies = query(platform, json)
+		replies = append(replies, networkQuery(platform, networkFixture(platform))...)
+		replies = append(replies, failed)
 		if completed {
 			replies = append(replies, absent(platform))
+			replies = append(replies, networkQuery(platform, networkFixture(platform))...)
+			replies = append(replies, networkMembers(platform, "[]"), reply{args: []string{"network", remove, "shelleyctl-demo"}})
 		} else {
 			replies = append(replies, query(platform, json)...)
 		}
@@ -340,12 +372,16 @@ func TestMutationFailuresAndConcurrentCompletion(t *testing.T) {
 }
 
 func TestAppleStructuredStatus(t *testing.T) {
-	json := strings.ReplaceAll(appleJSON, `"status":"stopped"`, `"status":{"state":"running","networks":[]}`)
-	a, done := fakeCLI(t, "darwin", query("darwin", json))
+	json := strings.ReplaceAll(appleJSON, `"status":"stopped","networks":[]`, `"status":{"state":"running","networks":[{"network":"shelleyctl-demo"}]}`)
+	replies := query("darwin", json)
+	replies = append(replies, query("darwin", json)...)
+	replies = append(replies, networkQuery("darwin", networkFixture("darwin"))...)
+	a, done := fakeCLI(t, "darwin", replies)
 	status, err := a.Inspect(t.Context(), "demo")
 	require.NoError(t, err)
 	require.True(t, status.Exists)
 	require.True(t, status.Running)
+	require.NoError(t, a.Start(t.Context(), "demo"))
 	done()
 }
 

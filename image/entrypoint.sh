@@ -58,6 +58,25 @@ if ! getent passwd "$(id -u)" >/dev/null; then
     fi
 fi
 
+# Shelley stores terminal sockets alongside its database. Redirect that runtime
+# directory to local storage because Apple VirtioFS cannot host Unix sockets.
+# Preserve files from older images rather than deleting terminal logs or state.
+terminal_dir=/tmp/shelley-terminals
+mkdir -p "$terminal_dir"
+chmod 0700 "$terminal_dir"
+if [ -L "$HOME/terminals" ]; then
+    if [ "$(readlink "$HOME/terminals")" != "$terminal_dir" ]; then
+        echo 'The terminals symlink must point to /tmp/shelley-terminals.' >&2
+        exit 1
+    fi
+else
+    if [ -e "$HOME/terminals" ]; then
+        backup_dir=$(mktemp -d "$HOME/terminals-retained.XXXXXX")
+        mv "$HOME/terminals" "$backup_dir/terminals"
+    fi
+    ln -s "$terminal_dir" "$HOME/terminals"
+fi
+
 # Allow an explicit diagnostic command without bypassing home initialization.
 if [ "$#" -gt 0 ]; then
     exec "$@"

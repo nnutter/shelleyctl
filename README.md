@@ -202,6 +202,9 @@ Each instance's `instances/<name>/home` directory mounts at `/home/shelley`.
 Its database is `/home/shelley/shelley.db`, and its optional configuration is `/home/shelley/shelley.json`.
 Tool artifacts and caches also live in the persistent home.
 The local CLI Unix socket is transient at `/tmp/shelley.sock`, outside macOS VirtioFS storage.
+Terminal runtime files also use local storage: `/home/shelley/terminals` links to `/tmp/shelley-terminals`.
+Terminal sessions do not survive container replacement.
+On first startup with the updated image, existing terminal files are retained under `terminals-retained.*/terminals` in the persistent home.
 On macOS, the entrypoint supplies libc user identity data for the mount owner's UID so tools such as OpenSSH work.
 For native diagnostic commands that need this environment, invoke them through the entrypoint:
 
@@ -240,6 +243,10 @@ go test -race -shuffle=on ./...
 
 # Optional native Podman image checks, after building the image:
 image/smoke.sh
+image/terminal-smoke.sh
+
+# Native terminal regression check on macOS, after building the image:
+image/terminal-smoke.sh localhost/shelleyctl:local container
 ```
 
 Packages separate command presentation, instance recovery, runtime protocols, startup, Tailscale integration, and image construction.

@@ -53,6 +53,7 @@ func Defaults() (Options, error) {
 type containerRuntime interface {
 	Build(context.Context, string, string) error
 	Check(context.Context, cr.Spec) error
+	CheckImage(context.Context, string) error
 	Inspect(context.Context, string) (cr.Status, error)
 	Ensure(context.Context, cr.Spec) error
 	Start(context.Context, string) error
@@ -127,6 +128,9 @@ func (a *Application) Create(ctx context.Context, name string) (result error) {
 	if err != nil {
 		return err
 	}
+	if r.PendingImage != "" {
+		return a.finishUpdate(ctx, s, r, resume)
+	}
 	return a.activate(ctx, r, resume)
 }
 
@@ -157,14 +161,15 @@ func (a *Application) Delete(ctx context.Context, name string) (result error) {
 	if err := a.save(s); err != nil {
 		return err
 	}
-	spec := cr.Spec{Name: name, Image: r.Image, Port: r.Port, Home: filepath.Join(a.opts.StateDir, "instances", name, "home")}
+	spec := a.recordSpec(r)
 	if err := a.containers.Check(ctx, spec); err != nil {
 		return err
 	}
 	exposureErr := a.serve.Remove(ctx, name, r.Port)
 	startupErr := a.startup.Remove(ctx, name)
 	containerErr := a.containers.Remove(ctx, name)
-	return errors.Join(exposureErr, startupErr, containerErr)
+	stateErr := a.completeDelete(s, r, containerErr == nil)
+	return errors.Join(exposureErr, startupErr, containerErr, stateErr)
 }
 
 // Status reports observed state, including partial operations and retained data.
@@ -207,6 +212,31 @@ func (a *Application) Status(ctx context.Context, w io.Writer) (result error) {
 	return errors.Join(failures...)
 }
 
+// Update replaces an active instance with the current local image. An empty
+// image retains the saved reference; a nonempty image explicitly changes it.
+func (a *Application) Update(ctx context.Context, name, image string) (result error) {
+	if !namePattern.MatchString(name) {
+		return errors.New("invalid instance name")
+	}
+	if err := a.prepare(); err != nil {
+		return err
+	}
+	lock, err := a.lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, lock.Close()) }()
+	s, err := a.load()
+	if err != nil {
+		return err
+	}
+	r, err := a.recordUpdateIntent(ctx, s, name, image)
+	if err != nil {
+		return err
+	}
+	return a.finishUpdate(ctx, s, r, false)
+}
+
 func (a *Application) activate(ctx context.Context, r record, resume bool) error {
 	name := r.Name
 	home := filepath.Join(a.opts.StateDir, "instances", name, "home")
@@ -234,6 +264,18 @@ func (a *Application) activate(ctx context.Context, r record, resume bool) error
 	return nil
 }
 
+func (a *Application) completeDelete(s state, r record, removed bool) error {
+	if !removed {
+		return nil
+	}
+	if r.PendingImage == "" {
+		return nil
+	}
+	r.Image, r.PendingImage, r.Replacing = r.PendingImage, "", false
+	s.Instances[r.Name] = r
+	return a.save(s)
+}
+
 func (a *Application) ensureLauncher(ctx context.Context, name string, resume bool) error {
 	if resume {
 		installed, err := a.startup.Installed(name)
@@ -245,6 +287,33 @@ func (a *Application) ensureLauncher(ctx context.Context, name string, resume bo
 		}
 	}
 	return a.startup.Ensure(ctx, name, a.opts.Executable, a.opts.StateDir)
+}
+
+func (a *Application) finishUpdate(ctx context.Context, s state, r record, resume bool) error {
+	if err := a.containers.CheckImage(ctx, r.PendingImage); err != nil {
+		return err
+	}
+	if r.Replacing {
+		if err := a.containers.Check(ctx, a.recordSpec(r)); err != nil {
+			return err
+		}
+		if err := a.containers.Remove(ctx, r.Name); err != nil {
+			return err
+		}
+		// Persist the phase before creation so retries cannot remove a replacement.
+		r.Replacing = false
+		s.Instances[r.Name] = r
+		if err := a.save(s); err != nil {
+			return err
+		}
+	}
+	replacement := r
+	replacement.Image, replacement.PendingImage = r.PendingImage, ""
+	if err := a.activate(ctx, replacement, resume); err != nil {
+		return err
+	}
+	s.Instances[r.Name] = replacement
+	return a.save(s)
 }
 
 func (a *Application) load() (state, error) {
@@ -325,6 +394,49 @@ func (a *Application) recordIntent(s state, name string) (record, error) {
 	return r, nil
 }
 
+func (a *Application) recordSpec(r record) cr.Spec {
+	spec := cr.Spec{Name: r.Name, Image: r.Image, Port: r.Port, Home: filepath.Join(a.opts.StateDir, "instances", r.Name, "home")}
+	if r.PendingImage != "" {
+		if !r.Replacing {
+			spec.Image = r.PendingImage
+		}
+	}
+	return spec
+}
+
+func (a *Application) recordUpdateIntent(ctx context.Context, s state, name, image string) (record, error) {
+	r, exists := s.Instances[name]
+	if !exists {
+		return record{}, fmt.Errorf("unknown instance %q", name)
+	}
+	if !r.Desired {
+		return record{}, fmt.Errorf("instance %q is not active; create it first", name)
+	}
+	if r.PendingImage != "" {
+		if image != "" {
+			if image != r.PendingImage {
+				return record{}, fmt.Errorf("finish the pending update to %q before selecting another image", r.PendingImage)
+			}
+		}
+		return r, nil
+	}
+	if image == "" {
+		image = r.Image
+	}
+	if err := a.containers.Check(ctx, a.recordSpec(r)); err != nil {
+		return record{}, err
+	}
+	if err := a.containers.CheckImage(ctx, image); err != nil {
+		return record{}, fmt.Errorf("replacement image unavailable; build or pull it first: %w", err)
+	}
+	r.PendingImage, r.Replacing = image, true
+	s.Instances[name] = r
+	if err := a.save(s); err != nil {
+		return record{}, err
+	}
+	return r, nil
+}
+
 func (a *Application) save(s state) (result error) {
 	data, err := json.Marshal(s)
 	if err != nil {
@@ -366,6 +478,9 @@ func (a *Application) statusRow(ctx context.Context, r record) (string, error) {
 	launch := observedLabel(launched, startupErr, "installed", "missing")
 	exposed := observedLabel(service.Configured, serveErr, "configured*", "absent")
 	desired := "active"
+	if r.PendingImage != "" {
+		desired = "updating"
+	}
 	if !r.Desired {
 		desired = "deleted (data retained)"
 	}

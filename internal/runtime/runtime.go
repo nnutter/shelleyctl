@@ -108,6 +108,15 @@ func (a *Adapter) Check(ctx context.Context, spec Spec) error {
 	return c.validate(spec)
 }
 
+// CheckImage requires a valid local image before an update removes a container.
+func (a *Adapter) CheckImage(ctx context.Context, image string) error {
+	if err := validImage(image); err != nil {
+		return err
+	}
+	_, err := a.command(ctx, "image", "inspect", image)
+	return err
+}
+
 // Ensure creates a stopped container, or validates an existing container.
 // Call Start separately to run it. Existing resources are never replaced.
 func (a *Adapter) Ensure(ctx context.Context, spec Spec) error {

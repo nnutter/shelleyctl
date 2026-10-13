@@ -183,7 +183,31 @@ Repeating `delete` for a known deleted instance is safe.
 Creating that name again reuses its retained data and configuration.
 Scheduled startup cannot revive a deleted instance.
 Unknown names fail without attempting to remove external resources.
-There is no automatic permanent-data deletion or upgrade command.
+There is no automatic permanent-data deletion.
+
+## Update an existing instance
+
+Install the current `shelleyctl` binary first, because its image build context is embedded.
+Build the image, then explicitly replace the instance's container:
+
+```sh
+shelleyctl build
+shelleyctl update christy
+# To explicitly select a different already-built or pulled image:
+shelleyctl update christy --to-image localhost/shelleyctl:new
+```
+
+Without `--to-image`, update retains the instance's saved image reference and uses its current local contents.
+For a custom saved tag, build that tag with `shelleyctl --image <saved-tag> build` first.
+Update does not download the latest upstream Shelley release: the bundled release remains pinned in the Dockerfile.
+It replaces the container and owned network, but retains the home, database, model configuration, backend port, service definition, and launcher.
+Existing sessions and app processes stop during the replacement.
+Back up the home before updating if you need to recover from an upstream database migration.
+The replacement image must already exist locally, and ownership checks run before removal.
+If update fails, repeat the same update command or `create NAME` to resume.
+Scheduled reconciliation also resumes pending updates without repeatedly removing an already-created replacement.
+Delete cancels a pending update and prevents scheduled revival.
+
 
 ## Publish web apps
 

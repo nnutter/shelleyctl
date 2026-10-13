@@ -32,6 +32,8 @@ type runtimeStub struct {
 func (r *runtimeStub) Build(context.Context, string, string) error { return r.action("build") }
 func (r *runtimeStub) Check(context.Context, cr.Spec) error        { return r.action("check container") }
 
+func (r *runtimeStub) CheckImage(context.Context, string) error { return r.action("check image") }
+
 func (r *runtimeStub) Ensure(_ context.Context, s cr.Spec) error {
 	r.specs = append(r.specs, s)
 	return r.action("ensure container")

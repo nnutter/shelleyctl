@@ -16,6 +16,7 @@ type Application interface {
 	Build(context.Context) error
 	Create(context.Context, string) error
 	Delete(context.Context, string) error
+	Update(context.Context, string, string) error
 }
 
 // Execute applies Fang's help and error presentation to the command tree.
@@ -74,6 +75,18 @@ func New(app Application) *cobra.Command {
 			return run(cmd, func(ctx context.Context) error { return app.Delete(ctx, args[0]) })
 		},
 	})
+	var targetImage string
+	update := &cobra.Command{
+		Use:   "update NAME",
+		Short: "Replace an active container and retain its data",
+		Long:  "Replace the named container with the current local image. Its data is retained. Build the image first. Repeat update or create to resume a failed update.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return run(cmd, func(ctx context.Context) error { return app.Update(ctx, args[0], targetImage) })
+		},
+	}
+	update.Flags().StringVar(&targetImage, "to-image", "", "Explicitly change the saved image reference")
+	root.AddCommand(update)
 	return root
 }
 

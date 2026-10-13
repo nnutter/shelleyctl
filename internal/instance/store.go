@@ -10,10 +10,12 @@ import (
 var namePattern = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$`)
 
 type record struct {
-	Name    string `json:"name"`
-	Image   string `json:"image"`
-	Port    int    `json:"port"`
-	Desired bool   `json:"desired"`
+	Name         string `json:"name"`
+	Image        string `json:"image"`
+	Port         int    `json:"port"`
+	Desired      bool   `json:"desired"`
+	PendingImage string `json:"pending_image,omitempty"`
+	Replacing    bool   `json:"replacing,omitzero"`
 }
 type state struct {
 	Version   int               `json:"version"`
@@ -54,6 +56,11 @@ func validateRecord(name string, r record) error {
 	}
 	if r.Name != name {
 		return errors.New("inconsistent name in instance state")
+	}
+	if r.Replacing {
+		if r.PendingImage == "" {
+			return errors.New("incomplete update intent in instance state")
+		}
 	}
 	if !validPort(r.Port) {
 		return errors.New("invalid port in instance state")

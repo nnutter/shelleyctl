@@ -33,6 +33,14 @@ func (a *recordingApp) Status(ctx context.Context, w io.Writer) error {
 	return a.record(ctx, "status")
 }
 
+func (a *recordingApp) Update(ctx context.Context, name, image string) error {
+	call := "update " + name
+	if image != "" {
+		call += " --to-image " + image
+	}
+	return a.record(ctx, call)
+}
+
 func (a *recordingApp) record(ctx context.Context, call string) error {
 	a.calls = append(a.calls, call)
 	a.ctx = ctx
@@ -41,7 +49,7 @@ func (a *recordingApp) record(ctx context.Context, call string) error {
 
 func TestCommandDispatch(t *testing.T) {
 	for _, plain := range []bool{false, true} {
-		for _, command := range []string{"status", "build", "create example", "delete example"} {
+		for _, command := range []string{"status", "build", "create example", "delete example", "update example", "update example --to-image new-image"} {
 			t.Run(command+map[bool]string{false: " redirected", true: " plain"}[plain], func(t *testing.T) {
 				for _, appErr := range []error{nil, errors.New("application failed")} {
 					app := &recordingApp{err: appErr}
@@ -85,6 +93,8 @@ func TestInvalidArgumentsDoNotDispatch(t *testing.T) {
 		{"create", "one", "two"},
 		{"delete"},
 		{"delete", "one", "two"},
+		{"update"},
+		{"update", "one", "two"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			app := &recordingApp{}
@@ -99,7 +109,7 @@ func TestInvalidArgumentsDoNotDispatch(t *testing.T) {
 }
 
 func TestHelpDoesNotDispatchAndExplainsDataRetention(t *testing.T) {
-	for _, args := range [][]string{nil, {"--help"}, {"status", "--help"}, {"build", "--help"}, {"create", "--help"}, {"delete", "--help"}} {
+	for _, args := range [][]string{nil, {"--help"}, {"status", "--help"}, {"build", "--help"}, {"create", "--help"}, {"delete", "--help"}, {"update", "--help"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			app := &recordingApp{}
 			cmd := New(app)

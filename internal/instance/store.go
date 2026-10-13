@@ -7,7 +7,7 @@ import (
 	"regexp"
 )
 
-var namePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
+var namePattern = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$`)
 
 type record struct {
 	Name    string `json:"name"`

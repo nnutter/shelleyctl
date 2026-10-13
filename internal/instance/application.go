@@ -105,7 +105,7 @@ func (a *Application) Build(ctx context.Context) (result error) {
 // Scheduled resumes cannot revive retained records marked for deletion.
 func (a *Application) Create(ctx context.Context, name string) (result error) {
 	if !namePattern.MatchString(name) {
-		return errors.New("name must start with a lowercase letter and contain up to 40 lowercase letters, digits, or hyphens")
+		return errors.New("name must start with a lowercase letter, end with a letter or digit, and contain up to 40 lowercase letters, digits, or hyphens")
 	}
 	if err := a.prepare(); err != nil {
 		return err

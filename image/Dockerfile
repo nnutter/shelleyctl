@@ -44,6 +44,7 @@ RUN for name in screenshots uploads downloads console-logs oneshot-images screen
         ln -s "/home/shelley/.local/share/shelley/artifacts/$name" "/tmp/shelley-$name"; \
     done
 
+COPY user-guidance.md /usr/local/share/shelleyctl/user-guidance.md
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/shelley-entrypoint
 WORKDIR /home/shelley
 EXPOSE 9000

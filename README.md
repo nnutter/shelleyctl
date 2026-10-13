@@ -185,6 +185,15 @@ Scheduled startup cannot revive a deleted instance.
 Unknown names fail without attempting to remove external resources.
 There is no automatic permanent-data deletion or upgrade command.
 
+## User guidance
+
+The image appends self-hosting guidance to the existing user-level `AGENTS.md`, using Shelley's normal location precedence.
+It creates `~/.config/AGENTS.md` when no user guidance exists.
+The guidance tells the agent not to use `exe.xyz` services and to use configured providers and local tools instead.
+Initialization preserves existing instructions and does not duplicate the guidance on subsequent runs.
+This is user-editable model guidance, not a network restriction or a protected administrator policy.
+It does not disable UI features that independently contact exe.dev services.
+
 ## Data and models
 
 Default state locations are:

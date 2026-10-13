@@ -30,6 +30,19 @@ for name in screenshots uploads downloads console-logs oneshot-images screencast
 done
 cd "$HOME"
 
+# Follow Shelley's user-guidance precedence without hiding existing guidance.
+guidance="$HOME/.config/AGENTS.md"
+for candidate in "$HOME/.config/AGENTS.md" "$HOME/.config/shelley/AGENTS.md" "$HOME/.agents/AGENTS.md" "$HOME/.shelley/AGENTS.md"; do
+    if [ -f "$candidate" ]; then
+        guidance=$candidate
+        break
+    fi
+done
+if ! grep -Fqx '<!-- shelleyctl:hosted-services-guidance -->' "$guidance" 2>/dev/null; then
+    printf '\n' >> "$guidance"
+    cat /usr/local/share/shelleyctl/user-guidance.md >> "$guidance"
+fi
+
 # Apple VirtioFS uses the runtime process UID for its mount mapping. Run as the
 # Mac owner, and supply a libc user record when that UID is absent in the image.
 # No root access or ownership change on the host home is needed.

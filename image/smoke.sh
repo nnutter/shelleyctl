@@ -11,14 +11,21 @@ for identity in 1000:1000 501:20; do
     uid=${identity%:*}
     gid=${identity#*:}
     home="$work/home-$uid"
-    mkdir "$home"
+    mkdir -p "$home/.agents"
+    printf 'Keep my existing instructions.\n' > "$home/.agents/AGENTS.md"
     # Disable Podman's automatic passwd injection to reproduce Apple container.
+    # Expand HOME inside the container, not on the host.
+    # shellcheck disable=SC2016
     podman run --rm --pull=never --passwd=false \
         --userns="keep-id:uid=$uid,gid=$gid" --user "$identity" \
         --volume "$home:/home/shelley" "$image" sh -ec '
             test "$(id -un)" = shelley
             timeout 10s ssh -G localhost >/dev/null 2>&1
             printf "retained\n" > "$HOME/marker"
+            /usr/local/bin/shelley-entrypoint true
+            grep -qx "Keep my existing instructions." "$HOME/.agents/AGENTS.md"
+            test "$(grep -c "shelleyctl:hosted-services-guidance" "$HOME/.agents/AGENTS.md")" = 1
+            grep -q "Do not use services on" "$HOME/.agents/AGENTS.md"
             # Linux production uses UID 1000. The ARM64 Mac browser is
             # validated on Studio, not by this amd64 namespace simulation.
             if [ "$(id -u)" = 1000 ]; then

@@ -37,8 +37,21 @@ run = [
 
 [tasks.tests]
 alias = "test"
-description = "Run tests (with the race detector)"
-run = "go test -cover ./..."
+description = "Run Go tests and tooling regression checks"
+run = ["mise run test-fixer-paths", "go test -cover ./..."]
+
+[tasks.test-fixer-paths]
+description = "Check that file-scoped fixers ignore deleted Go files"
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+# Exercise a deleted package too, so package-level fixers must skip the path.
+for task in fix-gofumpt fix-goimports fix-go-fix fix-testifylint; do
+  mise run "$task" -- "$work/deleted-package/main.go"
+done
+'''
 
 #############
 # Fix Tasks #
@@ -67,6 +80,7 @@ if [ -z "${usage_staged_files:-}" ]; then
 fi
 go_files=""
 for f in ${usage_staged_files}; do
+  [ -f "$f" ] || continue
   case "$f" in *.go) go_files="$go_files $f" ;; esac
 done
 [ -z "$go_files" ] && exit 0
@@ -86,6 +100,7 @@ if [ -z "${usage_staged_files:-}" ]; then
 fi
 go_files=""
 for f in ${usage_staged_files}; do
+  [ -f "$f" ] || continue
   case "$f" in *.go) go_files="$go_files $f" ;; esac
 done
 [ -z "$go_files" ] && exit 0
@@ -105,6 +120,7 @@ if [ -z "${usage_staged_files:-}" ]; then
 fi
 dirs=""
 for f in ${usage_staged_files}; do
+  [ -f "$f" ] || continue
   case "$f" in
     *.go)
       d=$(dirname "$f")
@@ -136,6 +152,7 @@ if [ -z "${usage_staged_files:-}" ]; then
 fi
 dirs=""
 for f in ${usage_staged_files}; do
+  [ -f "$f" ] || continue
   case "$f" in
     *.go)
       d=$(dirname "$f")

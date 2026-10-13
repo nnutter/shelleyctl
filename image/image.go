@@ -23,7 +23,12 @@ func Materialize() (dir string, err error) {
 			err = errors.Join(err, os.RemoveAll(dir))
 		}
 	}()
-	for _, name := range []string{"Dockerfile", "entrypoint.sh", ".dockerignore"} {
+	entries, err := contextFiles.ReadDir(".")
+	if err != nil {
+		return dir, err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
 		data, readErr := contextFiles.ReadFile(name)
 		if readErr != nil {
 			return dir, readErr

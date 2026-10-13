@@ -138,6 +138,13 @@ Interactive terminals show cancellable Bubble Tea progress.
 Use `--plain` to disable interactive progress.
 Failures return a nonzero exit status in both modes.
 
+### Shell completion
+
+Generate completion scripts with `shelleyctl completion <shell>`.
+Supported shells are Bash, Zsh, Fish, and PowerShell.
+Use `shelleyctl completion <shell> --help` for installation instructions.
+Generating completion scripts does not read instance state or invoke lifecycle operations.
+
 ### Creation and recovery
 
 `create` records desired state before creating external resources.

@@ -117,3 +117,19 @@ func TestHelpDoesNotDispatchAndExplainsDataRetention(t *testing.T) {
 		})
 	}
 }
+
+func TestCompletionGeneratesScriptsWithoutDispatch(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh", "fish", "powershell"} {
+		t.Run(shell, func(t *testing.T) {
+			app := &recordingApp{}
+			cmd := New(app)
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			cmd.SetErr(io.Discard)
+			cmd.SetArgs([]string{"completion", shell})
+			require.NoError(t, Execute(t.Context(), cmd))
+			require.Contains(t, output.String(), "shelleyctl")
+			require.Empty(t, app.calls, "completion must not invoke application operations")
+		})
+	}
+}

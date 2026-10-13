@@ -20,7 +20,7 @@ type Application interface {
 
 // Execute applies Fang's help and error presentation to the command tree.
 func Execute(ctx context.Context, root *cobra.Command) error {
-	return fang.Execute(ctx, root, fang.WithoutCompletions(), fang.WithoutManpage())
+	return fang.Execute(ctx, root, fang.WithoutManpage())
 }
 
 // New constructs the command tree. Configuration belongs to the application.
@@ -37,7 +37,6 @@ func New(app Application) *cobra.Command {
 		},
 	}
 	root.PersistentFlags().BoolVar(&plain, "plain", false, "Disable interactive progress")
-	root.CompletionOptions.DisableDefaultCmd = true
 
 	run := func(cmd *cobra.Command, operation func(context.Context) error) error {
 		if plain || !isTerminal(cmd.InOrStdin()) || !isTerminal(cmd.ErrOrStderr()) {

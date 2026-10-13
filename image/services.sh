@@ -12,7 +12,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
-shelley --db "$HOME/shelley.db" --config "$HOME/shelley.json" serve --port 9001 --socket /tmp/shelley.sock &
+shelley --db "$HOME/.local/state/shelley/shelley.db" --config "$HOME/shelley.json" serve --port 9001 --socket /tmp/shelley.sock &
 pids+=("$!")
 nginx -e stderr -c /etc/shelleyctl/nginx.conf -g 'daemon off;' &
 pids+=("$!")

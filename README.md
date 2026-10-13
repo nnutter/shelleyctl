@@ -284,12 +284,16 @@ Use one state directory per host, and use it consistently across commands.
 Launchers retain the state directory used during creation.
 
 Each instance's `instances/<name>/home` directory mounts at `/home/shelley`.
-Its database is `/home/shelley/shelley.db`, and its optional configuration is `/home/shelley/shelley.json`.
+Its database and SQLite sidecars are under `/home/shelley/.local/state/shelley/`.
+Its optional configuration remains `/home/shelley/shelley.json`.
 Tool artifacts and caches also live in the persistent home.
 The local CLI Unix socket is transient at `/tmp/shelley.sock`, outside macOS VirtioFS storage.
-Terminal runtime files also use local storage: `/home/shelley/terminals` links to `/tmp/shelley-terminals`.
+Terminal runtime files also use local storage: `~/.local/state/shelley/terminals` links to `/tmp/shelley-terminals`.
 Terminal sessions do not survive container replacement.
-On first startup with the updated image, existing terminal files are retained under `terminals-retained.*/terminals` in the persistent home.
+Fresh instances create no database or terminal-state files in the home root.
+There is no automatic migration from the old home-root layout during early development.
+For a clean recreation, delete the instance, then explicitly back up or remove its retained home before creating it again.
+The delete command itself does not remove that home.
 On macOS, the entrypoint supplies libc user identity data for the mount owner's UID so tools such as OpenSSH work.
 For native diagnostic commands that need this environment, invoke them through the entrypoint:
 

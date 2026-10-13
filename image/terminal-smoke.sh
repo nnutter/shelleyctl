@@ -15,8 +15,7 @@ for identity in $identities; do
     uid=${identity%:*}
     gid=${identity#*:}
     home="$work/home-$uid"
-    mkdir -p "$home/terminals"
-    printf 'retained terminal log\n' > "$home/terminals/previous.log"
+    mkdir -p "$home"
     # A second container exercises initialization with an existing home link
     # whose transient target disappeared with the first container.
     for attempt in 1 2; do
@@ -27,8 +26,8 @@ for identity in $identities; do
         # Expand HOME inside the container, not on the host.
         # shellcheck disable=SC2016
         if ! "$@" --volume "$home:/home/shelley" "$image" sh -ec '
-            timeout --foreground --kill-after=2s 10s shelley exe-scroll "$HOME/terminals/smoke.sock" -- sh -ec '\''
-                test -S "$HOME/terminals/smoke.sock"
+            timeout --foreground --kill-after=2s 10s shelley exe-scroll "$HOME/.local/state/shelley/terminals/smoke.sock" -- sh -ec '\''
+                test -S "$HOME/.local/state/shelley/terminals/smoke.sock"
                 printf "terminal started\n" > "$HOME/terminal-marker"
             '\''
         ' > "$work/run-$uid-$attempt.log" 2>&1; then
@@ -37,9 +36,8 @@ for identity in $identities; do
         fi
         test -s "$home/terminal-marker"
         rm "$home/terminal-marker"
-        set -- "$home"/terminals-retained.*/terminals/previous.log
-        test "$#" = 1
-        grep -qx 'retained terminal log' "$1"
+        test ! -e "$home/terminals"
+        test ! -L "$home/terminals"
     done
-    printf 'Terminal startup, retained logs, and replacement passed for UID %s\n' "$uid"
+    printf 'Hidden terminal state, startup, and replacement passed for UID %s\n' "$uid"
 done

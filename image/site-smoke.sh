@@ -55,6 +55,13 @@ EOF
     until curl -fsS --max-time 1 http://127.0.0.1:9000/ >/dev/null 2>&1; do
         i=$((i+1)); test "$i" -lt 100; sleep 0.1
     done
+    test -f "$HOME/.local/state/shelley/shelley.db" || {
+        echo "Database is not in the hidden state directory." >&2; exit 1
+    }
+    for path in "$HOME"/shelley.db* "$HOME/terminals" "$HOME"/terminals-retained.*; do
+        test ! -e "$path"
+        test ! -L "$path"
+    done
     shelley-site add game 18080
     i=0
     until test "$(curl -fsS --max-time 1 "http://127.0.0.1:9000/sites/game/level?x=1")" = "/level?x=1|/sites/game"; do

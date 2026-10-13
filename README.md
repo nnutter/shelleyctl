@@ -330,12 +330,14 @@ go test -race -shuffle=on ./...
 image/smoke.sh
 image/terminal-smoke.sh
 image/site-smoke.sh
-# Uses a local protocol provider, not a paid Meta API request:
-SHELLEYCTL_TEST_IMAGE=localhost/shelleyctl:local go test ./image -run TestNativeMuseTranscription
+# Builds a temporary embedded-context image and uses a local Meta protocol provider.
+# No paid Meta API request is made:
+SHELLEYCTL_TEST_IMAGE=localhost/shelleyctl:local go test ./image -run TestNative
 
 # Native terminal regression check on macOS, after building the image:
 image/terminal-smoke.sh localhost/shelleyctl:local container
 image/site-smoke.sh localhost/shelleyctl:local container
+SHELLEYCTL_TEST_IMAGE=localhost/shelleyctl:local go test ./image -run TestNativeEmbeddedContext
 ```
 
 Packages separate command presentation, instance recovery, runtime protocols, startup, Tailscale integration, and image construction.

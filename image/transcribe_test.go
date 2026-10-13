@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -22,6 +23,9 @@ import (
 // This native test exercises real curl, ffmpeg, the image entrypoint, and a
 // protocol-checking provider. No paid API call or production endpoint override.
 func TestNativeMuseTranscription(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the local TLS provider contract uses Podman's host network")
+	}
 	image := os.Getenv("SHELLEYCTL_TEST_IMAGE")
 	if image == "" {
 		t.Skip("set SHELLEYCTL_TEST_IMAGE to run the native Podman contract")

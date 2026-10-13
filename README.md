@@ -185,6 +185,37 @@ Scheduled startup cannot revive a deleted instance.
 Unknown names fail without attempting to remove external resources.
 There is no automatic permanent-data deletion or upgrade command.
 
+## Publish web apps
+
+The image runs Nginx on the published container port 9000 and Shelley internally on port 9001.
+Shelley's normal UI, streaming responses, and terminals remain at the root URL.
+Apps share the instance's existing Tailscale service and access policy.
+The image also installs a discoverable `shelley-site` agent skill with publishing, troubleshooting, and security instructions.
+Shelley can load it with `shelley skill cat shelley-site`.
+The default skill links from `~/.config/shelley/shelley-site` to the image's current version.
+Initialization preserves existing user skills in Shelley's supported search paths.
+To customize the installed default, replace that home-directory symlink with your own skill directory.
+
+From a Shelley terminal, start the app on a loopback port, then register it:
+
+```sh
+# Run the app on 127.0.0.1:3000, then:
+shelley-site add game 3000
+shelley-site list
+# Remove the route without stopping the app:
+shelley-site remove game
+```
+
+The app is available at `https://shelley-christy.tail98ced6.ts.net/sites/game/`.
+The proxy strips `/sites/game/` before forwarding and sends `X-Forwarded-Prefix` to the app.
+Configure the app's public base path as `/sites/game/` so assets and browser-side routes work.
+WebSockets are supported, and unknown site paths return 404 instead of reaching Shelley.
+Ports 9000 and 9001 are reserved.
+Routes persist in `~/.config/shelley/sites`, but the helper does not supervise app processes.
+Use an app launcher or a persistent terminal and restart the app after container replacement.
+Treat published apps as trusted: they share Shelley's origin and can make requests to its API.
+This is not a security boundary between an app and its own Shelley instance.
+
 ## User guidance
 
 The image appends self-hosting guidance to the existing user-level `AGENTS.md`, using Shelley's normal location precedence.
@@ -253,9 +284,11 @@ go test -race -shuffle=on ./...
 # Optional native Podman image checks, after building the image:
 image/smoke.sh
 image/terminal-smoke.sh
+image/site-smoke.sh
 
 # Native terminal regression check on macOS, after building the image:
 image/terminal-smoke.sh localhost/shelleyctl:local container
+image/site-smoke.sh localhost/shelleyctl:local container
 ```
 
 Packages separate command presentation, instance recovery, runtime protocols, startup, Tailscale integration, and image construction.

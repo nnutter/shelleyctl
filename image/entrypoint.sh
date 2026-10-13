@@ -90,6 +90,23 @@ else
     ln -s "$terminal_dir" "$HOME/terminals"
 fi
 
+mkdir -p "$HOME/.config/shelley/sites"
+# Shelley discovers skills in these user directories, including symlinked ones.
+# Do not shadow an existing user skill or replace a deliberately disabled skill.
+install_site_skill=1
+for candidate in "$HOME/.config/shelley/shelley-site" "$HOME/.config/agents/skills/shelley-site" "$HOME/.agents/skills/shelley-site" "$HOME/.shelley/shelley-site"; do
+    if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+        install_site_skill=0
+        break
+    fi
+done
+if [ "$install_site_skill" = 1 ]; then
+    ln -s /usr/local/share/shelleyctl/skills/shelley-site "$HOME/.config/shelley/shelley-site"
+fi
+for name in client proxy fastcgi uwsgi scgi; do
+    mkdir -p "/tmp/shelley-nginx/$name"
+done
+
 # Allow an explicit diagnostic command without bypassing home initialization.
 if [ "$#" -gt 0 ]; then
     exec "$@"
@@ -100,4 +117,4 @@ fi
 # Source: cmd/shelley/main.go at v0.1363.920203221.
 # VirtioFS home mounts cannot reliably host Unix sockets across replacement.
 # The socket is transient; local tools reach it inside the same container.
-exec shelley --db "$HOME/shelley.db" --config "$HOME/shelley.json" serve --port 9000 --socket /tmp/shelley.sock
+exec /usr/local/bin/shelley-services

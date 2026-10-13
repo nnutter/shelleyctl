@@ -1,0 +1,72 @@
+#!/bin/bash
+# Publish an app on the instance's existing HTTPS origin.
+set -euo pipefail
+dir="$HOME/.config/shelley/sites"
+usage() {
+    echo 'Usage: shelley-site add NAME PORT | remove NAME | list' >&2
+    exit 1
+}
+(($#)) || usage
+operation=$1
+if [[ $operation == list && $# == 1 ]]; then
+    for path in "$dir"/*.conf; do
+        [[ -f $path ]] || continue
+        name=${path##*/}
+        printf '%s\n' "${name%.conf}"
+    done
+    exit 0
+fi
+[[ ($operation == add && $# == 3) || ($operation == remove && $# == 2) ]] || usage
+name=$2
+[[ $name =~ ^[a-z][a-z0-9-]{0,39}$ ]] || { echo 'Invalid site name.' >&2; exit 1; }
+if [[ $operation == add ]]; then
+    [[ $3 =~ ^[0-9]{1,5}$ ]] || { echo 'Invalid port.' >&2; exit 1; }
+    port=$((10#$3))
+    ((port >= 1024 && port <= 65535 && port != 9000 && port != 9001)) || {
+        echo 'Port must be 1024–65535, excluding reserved ports 9000 and 9001.' >&2
+        exit 1
+    }
+fi
+mkdir -p "$dir"
+exec 9>"$dir/.lock"
+flock 9
+config="$dir/$name.conf"
+backup=$(mktemp "$dir/.backup.XXXXXX")
+pending=$(mktemp "$dir/.pending.XXXXXX")
+existed=0
+changed=0
+if [[ -f $config ]]; then
+    cp "$config" "$backup"
+    existed=1
+fi
+cleanup() {
+    if ((changed)); then
+        if ((existed)); then mv "$backup" "$config"; else rm -f "$config"; fi
+    fi
+    rm -f "$backup" "$pending"
+}
+trap cleanup EXIT
+if [[ $operation == add ]]; then
+    cat > "$pending" <<EOF
+location = /sites/$name { return 308 /sites/$name/; }
+location ^~ /sites/$name/ {
+    proxy_pass http://127.0.0.1:$port/;
+    proxy_set_header Host \$http_host;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection \$connection_upgrade;
+    proxy_set_header X-Forwarded-Proto \$http_x_forwarded_proto;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Prefix /sites/$name;
+    proxy_redirect default;
+    proxy_redirect ~^(/.*)\$ /sites/$name\$1;
+}
+EOF
+    mv "$pending" "$config"
+else
+    rm -f "$config"
+fi
+changed=1
+nginx -e stderr -t -c /etc/shelleyctl/nginx.conf
+nginx -e stderr -s reload -c /etc/shelleyctl/nginx.conf
+changed=0
+printf 'Site %s: %s\n' "$name" "$operation"

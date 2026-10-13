@@ -237,7 +237,8 @@ func (a *Adapter) createArguments(spec Spec) []string {
 		// Map the host operator to the image user so bind-mounted files remain writable.
 		args = append(args, "--userns=keep-id:uid=1000,gid=1000", "--user", "1000:1000")
 	} else {
-		// Apple's VirtioFS preserves the host directory owner and refuses chown.
+		// Apple's VirtioFS maps the mount owner to the runtime process UID.
+		// The image supplies libc identity data for this numeric user.
 		args = append(args, "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()))
 	}
 	for _, label := range []string{managedLabel + "=true", imageLabel + "=" + spec.Image, homeLabel + "=" + spec.Home, portLabel + "=" + strconv.Itoa(spec.Port)} {

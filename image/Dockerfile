@@ -13,7 +13,7 @@ ARG TARGETARCH
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash ca-certificates chromium curl ffmpeg fonts-liberation \
-        git gosu iproute2 jq less openssh-client procps ripgrep \
+        git gosu iproute2 jq less libnss-wrapper openssh-client procps ripgrep \
         tini tmux unzip xz-utils \
     && rm -rf /var/lib/apt/lists/* \
     && arch="${TARGETARCH:-$(dpkg --print-architecture)}" \

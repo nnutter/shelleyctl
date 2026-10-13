@@ -1,0 +1,38 @@
+#!/bin/bash
+# Explicit, opt-in recorded-audio transcription through Meta Model API.
+set -euo pipefail
+if (($# != 1)) || [[ ! -f $1 ]]; then
+    echo 'Usage: shelley-transcribe LOCAL_AUDIO_FILE' >&2
+    exit 1
+fi
+key_file=${MUSE_API_KEY_FILE:-$HOME/.config/shelley/muse-api-key}
+if [[ ! -r $key_file ]]; then
+    echo "Create the Meta API key file first: $key_file" >&2
+    exit 1
+fi
+key=$(< "$key_file")
+# Reject header/config injection without printing the credential.
+if [[ -z $key || $key == *[$'\r\n"\\']* ]]; then
+    echo 'The Meta API key must be one nonempty line without quotes or backslashes.' >&2
+    exit 1
+fi
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT HUP INT TERM
+# Decode browser recordings and other formats to Meta's mono PCM WAV format.
+# Limit conversion work, then reject oversized recordings rather than truncate.
+ffmpeg -nostdin -hide_banner -loglevel error -i "$1" -t 601 -vn -map_metadata -1 -ac 1 -ar 24000 -c:a pcm_s16le "$work/audio.wav"
+duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$work/audio.wav")
+if ! awk -v duration="$duration" 'BEGIN { exit !(duration > 0 && duration <= 600) }'; then
+    echo 'Recording must contain audio and be at most 10 minutes long.' >&2
+    exit 1
+fi
+printf '%s\n' '{"mode":"ENDPOINTING","model":"muse-voice-transcribe-1.0","audioEncoding":"WAV"}' > "$work/request.json"
+# Read authorization from stdin, not process arguments. No automatic retries:
+# an ambiguous provider failure must not silently duplicate a billed request.
+printf 'header = "Authorization: Bearer %s"\n' "$key" | curl --config - \
+    --fail --silent --show-error --connect-timeout 10 --max-time 180 \
+    --header 'Accept: application/json' \
+    --form "request=<$work/request.json;type=application/json" \
+    --form "audio=@$work/audio.wav;type=audio/wav" \
+    https://api.meta.ai/v1/asr/transcribe --output "$work/response.json"
+jq -r 'if (.transcript | type) == "string" then .transcript else error("Meta returned no transcript") end' "$work/response.json"

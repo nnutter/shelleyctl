@@ -240,6 +240,26 @@ Use an app launcher or a persistent terminal and restart the app after container
 Treat published apps as trusted: they share Shelley's origin and can make requests to its API.
 This is not a security boundary between an app and its own Shelley instance.
 
+## Muse audio transcription
+
+The image includes `shelley-transcribe` for recorded-audio transcription through Meta Model API instead of OpenAI.
+Store your Meta API key in `~/.config/shelley/muse-api-key` with mode 0600, or select an existing file with `MUSE_API_KEY_FILE`.
+Do not paste the key into a conversation.
+
+```sh
+shelley-transcribe /home/shelley/recording.webm > /home/shelley/transcript.txt
+```
+
+The helper converts the recording to mono 24 kHz PCM WAV and rejects audio longer than ten minutes before contacting Meta.
+It sends audio only when explicitly invoked, and it does not retry potentially billed requests automatically.
+The API key stays out of process arguments and helper output.
+The instance user can read the key file, so this is not administrator-only credential storage.
+No transcription request falls back to OpenAI or exe.dev.
+
+This helper does **not** replace Shelley's built-in recording UI or fix **Start voice conversation**.
+Muse supplies speech-to-text, while that button uses a different live-conversation and delegation protocol.
+See [Muse voice integration findings](docs/muse-voice.md) for the remaining integration work and provider limitations.
+
 ## User guidance
 
 The image appends self-hosting guidance to the existing user-level `AGENTS.md`, using Shelley's normal location precedence.
@@ -309,6 +329,8 @@ go test -race -shuffle=on ./...
 image/smoke.sh
 image/terminal-smoke.sh
 image/site-smoke.sh
+# Uses a local protocol provider, not a paid Meta API request:
+SHELLEYCTL_TEST_IMAGE=localhost/shelleyctl:local go test ./image -run TestNativeMuseTranscription
 
 # Native terminal regression check on macOS, after building the image:
 image/terminal-smoke.sh localhost/shelleyctl:local container

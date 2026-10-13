@@ -52,6 +52,7 @@ COPY nginx.conf /etc/shelleyctl/nginx.conf
 COPY --chmod=0755 services.sh /usr/local/bin/shelley-services
 COPY --chmod=0755 shelley-site /usr/local/bin/shelley-site
 COPY --chmod=0644 shelley-site-skill.md /usr/local/share/shelleyctl/skills/shelley-site/SKILL.md
+COPY --chmod=0755 shelley-transcribe /usr/local/bin/shelley-transcribe
 COPY user-guidance.md /usr/local/share/shelleyctl/user-guidance.md
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/shelley-entrypoint
 # COPY's file mode can also affect newly created directories in BuildKit.

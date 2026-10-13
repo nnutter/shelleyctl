@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed Dockerfile entrypoint.sh .dockerignore user-guidance.md nginx.conf services.sh shelley-site shelley-site-skill.md
+//go:embed Dockerfile entrypoint.sh .dockerignore user-guidance.md nginx.conf services.sh shelley-site shelley-site-skill.md shelley-transcribe
 var contextFiles embed.FS
 
 // Materialize writes the build context to a temporary directory.

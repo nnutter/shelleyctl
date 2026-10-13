@@ -204,6 +204,7 @@ It replaces the container and owned network, but retains the home, database, mod
 Existing sessions and app processes stop during the replacement.
 Back up the home before updating if you need to recover from an upstream database migration.
 The replacement image must already exist locally, and ownership checks run before removal.
+Update refreshes the launcher to the current CLI executable before replacing the container, so scheduled recovery understands the update phases.
 If update fails, repeat the same update command or `create NAME` to resume.
 Scheduled reconciliation also resumes pending updates without repeatedly removing an already-created replacement.
 Delete cancels a pending update and prevents scheduled revival.

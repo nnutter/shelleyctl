@@ -429,12 +429,7 @@ func (a *Application) recordUpdateIntent(ctx context.Context, s state, name, ima
 	if err := a.containers.CheckImage(ctx, image); err != nil {
 		return record{}, fmt.Errorf("replacement image unavailable; build or pull it first: %w", err)
 	}
-	r.PendingImage, r.Replacing = image, true
-	s.Instances[name] = r
-	if err := a.save(s); err != nil {
-		return record{}, err
-	}
-	return r, nil
+	return a.saveUpdateIntent(ctx, s, r, image)
 }
 
 func (a *Application) save(s state) (result error) {
@@ -468,6 +463,20 @@ func (a *Application) save(s state) (result error) {
 		return err
 	}
 	return errors.Join(dir.Sync(), dir.Close())
+}
+
+func (a *Application) saveUpdateIntent(ctx context.Context, s state, r record, image string) (record, error) {
+	// A launcher from another binary path may not understand update phases.
+	// Refresh it while the original container is still available.
+	if err := a.ensureLauncher(ctx, r.Name, false); err != nil {
+		return record{}, err
+	}
+	r.PendingImage, r.Replacing = image, true
+	s.Instances[r.Name] = r
+	if err := a.save(s); err != nil {
+		return record{}, err
+	}
+	return r, nil
 }
 
 func (a *Application) statusRow(ctx context.Context, r record) (string, error) {

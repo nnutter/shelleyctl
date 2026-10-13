@@ -13,7 +13,7 @@ import (
 
 func TestUpdateResumesWithoutRemovingReplacementAndRetainsData(t *testing.T) {
 	for _, image := range []string{"original-image", "new-image"} {
-		for _, stage := range []string{"remove container", "ensure container", "start container", "ensure startup", "ensure exposure"} {
+		for _, stage := range []string{"remove container", "ensure container", "start container", "ensure exposure"} {
 			t.Run(image+"/"+stage, func(t *testing.T) { checkUpdateRecovery(t, image, stage) })
 		}
 	}
@@ -69,6 +69,7 @@ func checkUpdateRecovery(t *testing.T, image, stage string) {
 		want = 2
 	}
 	require.Equal(t, want, removals, "recovery must not remove a newly created replacement")
+	require.Less(t, slices.Index(actions, "ensure startup"), slices.Index(actions, "remove container"), "the scheduled reconciler must know update phases before replacement")
 	require.False(t, slices.Contains(actions, "remove exposure"))
 	require.False(t, slices.Contains(actions, "remove startup"))
 	for _, spec := range a.containers.(*runtimeStub).specs {
@@ -79,7 +80,7 @@ func checkUpdateRecovery(t *testing.T, image, stage string) {
 }
 
 func TestUpdatePreflightPreservesRunningIntent(t *testing.T) {
-	for _, stage := range []string{"check container", "check image"} {
+	for _, stage := range []string{"check container", "check image", "ensure startup"} {
 		t.Run(stage, func(t *testing.T) {
 			failure := errors.New("preflight failed")
 			var actions []string

@@ -1,0 +1,9 @@
+*
+!Dockerfile
+!entrypoint.sh
+!user-guidance.md
+!nginx.conf
+!services.sh
+!shelley-site
+!shelley-site-skill.md
+!shelley-transcribe

@@ -1,0 +1,15 @@
+# git-tpl — https://noirbizarre.github.io/git-tpl/configuration/
+#
+# This file is versioned with the project. Edit an answer and run
+# `git tpl update` to re-render the template with it.
+
+[template]
+source = "git@github.com:nnutter/go-template.git"
+
+[answers]
+copyright_holder = "Nathaniel Nutter"
+copyright_year = "2026"
+go_version = "1.27.2"
+module_path = "github.com/nnutter/shelleyctl"
+project_name = "shelleyctl"
+with_homebrew = false

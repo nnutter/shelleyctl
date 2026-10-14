@@ -8,6 +8,8 @@ import (
 	"github.com/charmbracelet/fang"
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
+
+	"github.com/nnutter/shelleyctl/internal/models"
 )
 
 // Application supplies the operations exposed by the command tree.
@@ -15,6 +17,7 @@ type Application interface {
 	Status(context.Context, io.Writer) error
 	Build(context.Context) error
 	Create(context.Context, string) error
+	ConfigureModels(context.Context, string, models.Config) error
 	Delete(context.Context, string) error
 	Update(context.Context, string, string) error
 }
@@ -59,14 +62,7 @@ func New(app Application) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return run(cmd, app.Build)
 		},
-	}, &cobra.Command{
-		Use:   "create NAME",
-		Short: "Create a named container",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return run(cmd, func(ctx context.Context) error { return app.Create(ctx, args[0]) })
-		},
-	}, &cobra.Command{
+	}, createCommand(app, run), modelsCommand(app, run), &cobra.Command{
 		Use:   "delete NAME",
 		Short: "Delete a container and retain its data",
 		Long:  "Delete the named container. Its data is retained.",

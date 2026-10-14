@@ -9,15 +9,27 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/nnutter/shelleyctl/internal/models"
 )
 
 type recordingApp struct {
-	calls []string
-	ctx   context.Context
-	err   error
+	calls       []string
+	ctx         context.Context
+	err         error
+	modelConfig models.Config
+	modelErr    error
 }
 
 func (a *recordingApp) Build(ctx context.Context) error { return a.record(ctx, "build") }
+func (a *recordingApp) ConfigureModels(ctx context.Context, name string, config models.Config) error {
+	a.modelConfig = config
+	if err := a.record(ctx, "models configure "+name); err != nil {
+		return err
+	}
+	return a.modelErr
+}
+
 func (a *recordingApp) Create(ctx context.Context, name string) error {
 	return a.record(ctx, "create "+name)
 }

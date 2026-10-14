@@ -301,7 +301,7 @@ For native diagnostic commands that need this environment, invoke them through t
 container exec shelleyctl-alice /usr/local/bin/shelley-entrypoint ssh -G localhost
 ```
 
-Configure models and keys through Shelley's UI; those settings persist in its database.
+Configure models and keys through the CLI or Shelley's UI; those settings persist in its database.
 See [Models and API keys](https://shelley.dev/docs/models) and [shelley.json](https://shelley.dev/docs/config).
 The host's provider environment variables are not automatically passed into containers.
 Treat the database and home as sensitive data.
@@ -310,6 +310,50 @@ Persistence is not a backup.
 For a simple consistent backup, delete the instance to stop it and disable scheduled restart, copy its retained home, then create it again.
 Back up `state.json` as well.
 Do not copy a live SQLite database file by itself while ignoring its WAL.
+
+### Preconfigure models
+
+Supply a provider endpoint, a key file, and repeated model names when creating an instance:
+
+```sh
+shelleyctl create alice \
+  --api-url https://api.openai.com/v1 \
+  --api-type openai-responses \
+  --api-key-file ~/.config/shelleyctl/provider-key \
+  --model MODEL_A \
+  --model MODEL_B
+```
+
+Use the model names that your provider accepts.
+Keep the key file private, for example with mode `0600`.
+For an existing running instance, use the same options with `shelleyctl models configure alice`.
+Use `--api-key-file -` to read the key from stdin instead of a file.
+There is no literal API-key flag, so the key need not appear in shell history or process arguments.
+Input is limited to 64 KiB and must contain one nonempty key line.
+
+The supported API types are `openai-responses` (the default), `openai` (Chat Completions), `anthropic`, and `gemini`.
+For OpenAI formats, supply the base URL including `/v1`, not the `/responses` or `/chat/completions` suffix.
+Anthropic uses the full messages endpoint, and Gemini uses its API base URL.
+URLs must not contain credentials, a query, or a fragment.
+Use HTTPS for remote providers because an HTTP endpoint sends provider credentials without encryption.
+
+The CLI verifies container ownership and running state before accessing its loopback API.
+It adds missing models and updates the key on models with a matching endpoint, API type, and provider model name.
+Retries preserve their IDs, display names, token limits, reasoning settings, image settings, and tags.
+Unrelated models remain unchanged, and ambiguous duplicate matches require manual resolution in the UI.
+Changing an endpoint or API type creates a separate model instead of removing the old one.
+No provider test request is sent, so successful setup does not establish that a key or model works.
+
+Creation validates the supplied options before creating resources, then configures models after the instance becomes ready.
+Creation and model configuration are not one transaction.
+If setup stops partway through, repeat the same command or run `models configure` with the same options.
+Startup reconciliation does not replay model options or require the original key file.
+Model settings survive container replacement in Shelley's database.
+This operation does not select a new default model.
+
+Shelley stores custom-model API keys in plain text in its database.
+The CLI does not save keys in host lifecycle records or launcher arguments and does not print secret-bearing API responses.
+The key is not a protected administrator secret: agents with access to the instance's home can read its database.
 
 ## Startup and security boundaries
 

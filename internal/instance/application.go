@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nnutter/shelleyctl/image"
+	"github.com/nnutter/shelleyctl/internal/models"
 	cr "github.com/nnutter/shelleyctl/internal/runtime"
 	"github.com/nnutter/shelleyctl/internal/startup"
 	"github.com/nnutter/shelleyctl/internal/tailscale"
@@ -100,6 +101,34 @@ func (a *Application) Build(ctx context.Context) (result error) {
 	}
 	defer func() { result = errors.Join(result, os.RemoveAll(dir)) }()
 	return a.containers.Build(ctx, a.opts.Image, dir)
+}
+
+// ConfigureModels changes only the named instance's custom models. Credentials
+// stay in memory until Shelley stores them in its database, not in host records.
+func (a *Application) ConfigureModels(ctx context.Context, name string, config models.Config) (result error) {
+	if !namePattern.MatchString(name) {
+		return errors.New("invalid instance name")
+	}
+	if err := config.Validate(); err != nil {
+		return err
+	}
+	if err := a.prepare(); err != nil {
+		return err
+	}
+	lock, err := a.lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, lock.Close()) }()
+	s, err := a.load()
+	if err != nil {
+		return err
+	}
+	r, err := a.modelRecord(ctx, s, name)
+	if err != nil {
+		return err
+	}
+	return models.Configure(ctx, r.Port, config)
 }
 
 // Create records intent before side effects. Failures retain state for retry.
@@ -367,6 +396,33 @@ func (a *Application) lock(ctx context.Context) (*os.File, error) {
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
+}
+
+func (a *Application) modelRecord(ctx context.Context, s state, name string) (record, error) {
+	r, exists := s.Instances[name]
+	if !exists {
+		return record{}, fmt.Errorf("unknown instance %q", name)
+	}
+	if !r.Desired {
+		return record{}, errors.New("create the retained instance before configuring models")
+	}
+	if r.PendingImage != "" {
+		return record{}, errors.New("resume the pending instance update before configuring models")
+	}
+	if err := a.containers.Check(ctx, a.recordSpec(r)); err != nil {
+		return record{}, err
+	}
+	status, err := a.containers.Inspect(ctx, name)
+	if err != nil {
+		return record{}, err
+	}
+	if !status.Exists {
+		return record{}, errors.New("instance is missing; repeat create before configuring models")
+	}
+	if !status.Running {
+		return record{}, errors.New("instance is stopped; repeat create before configuring models")
+	}
+	return r, nil
 }
 
 func (a *Application) prepare() error {
